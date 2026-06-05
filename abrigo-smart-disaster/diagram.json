@@ -1,0 +1,166 @@
+{
+  "version": 1,
+  "author": "Joao Victor Pedro Vaz",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-devkit-c-v4",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-hc-sr04",
+      "id": "ultrasonic1",
+      "top": -100,
+      "left": -180,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn1",
+      "top": 140,
+      "left": -150,
+      "attrs": {
+        "color": "blue",
+        "label": "SAIDA"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led1",
+      "top": -90,
+      "left": 170,
+      "attrs": {
+        "color": "green",
+        "label": "VAGAS"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led2",
+      "top": -30,
+      "left": 170,
+      "attrs": {
+        "color": "red",
+        "label": "LOTADO"
+      }
+    },
+    {
+      "type": "wokwi-buzzer",
+      "id": "bz1",
+      "top": 80,
+      "left": 170,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-lcd1602",
+      "id": "lcd1",
+      "top": 210,
+      "left": -90,
+      "attrs": {
+        "pins": "i2c"
+      }
+    }
+  ],
+  "connections": [
+    [
+      "esp:5V",
+      "ultrasonic1:VCC",
+      "red",
+      []
+    ],
+    [
+      "esp:GND.1",
+      "ultrasonic1:GND",
+      "black",
+      []
+    ],
+    [
+      "esp:5",
+      "ultrasonic1:TRIG",
+      "green",
+      []
+    ],
+    [
+      "esp:18",
+      "ultrasonic1:ECHO",
+      "blue",
+      []
+    ],
+    [
+      "esp:33",
+      "btn1:1.l",
+      "green",
+      []
+    ],
+    [
+      "esp:GND.1",
+      "btn1:2.r",
+      "black",
+      []
+    ],
+    [
+      "esp:26",
+      "led1:A",
+      "green",
+      []
+    ],
+    [
+      "led1:C",
+      "esp:GND.1",
+      "black",
+      []
+    ],
+    [
+      "esp:27",
+      "led2:A",
+      "red",
+      []
+    ],
+    [
+      "led2:C",
+      "esp:GND.1",
+      "black",
+      []
+    ],
+    [
+      "esp:32",
+      "bz1:1",
+      "orange",
+      []
+    ],
+    [
+      "bz1:2",
+      "esp:GND.1",
+      "black",
+      []
+    ],
+    [
+      "esp:21",
+      "lcd1:SDA",
+      "green",
+      []
+    ],
+    [
+      "esp:22",
+      "lcd1:SCL",
+      "blue",
+      []
+    ],
+    [
+      "esp:5V",
+      "lcd1:VCC",
+      "red",
+      []
+    ],
+    [
+      "esp:GND.1",
+      "lcd1:GND",
+      "black",
+      []
+    ]
+  ],
+  "dependencies": {}
+}

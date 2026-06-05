@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Smart Disaster — Dashboard de Abrigos</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Syne:wght@400;700;800;900&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --ok:    #00e87a;
+  --warn:  #fbbf24;
+  --crit:  #f43f5e;
+  --bg:    #04080f;
+  --panel: #080f1c;
+  --panel2:#0b1425;
+  --edge:  #111f36;
+  --muted: #2a4060;
+  --txt:   #c8d8f0;
+  --accent:#38bdf8;
+  --mono:  'Share Tech Mono', monospace;
+  --sans:  'Syne', sans-serif;
+}
+
+html, body { height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--txt);
+  font-family: var(--sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── background decoration ── */
+body::before {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(ellipse 70% 50% at 15% 60%, #061830 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 85% 20%, #051a0e 0%, transparent 55%);
+}
+
+/* ── layout ── */
+.wrapper { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 32px 24px 48px; }
+
+/* ── header ── */
+header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 36px; gap: 16px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 16px; }
+.brand-icon { width: 52px; height: 52px; background: linear-gradient(135deg,#0f3460,#38bdf8); border-radius: 14px;
+              display: grid; place-items: center; font-size: 24px; flex-shrink: 0; }
+.brand-text h1 { font-size: 2rem; font-weight: 900; letter-spacing: .08em; color: #fff; text-transform: uppercase; line-height: 1; }
+.brand-text p  { font-family: var(--mono); font-size: .72rem; color: var(--muted); margin-top: 4px; letter-spacing: .15em; }
+
+.header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+#clock { font-family: var(--mono); font-size: 1.6rem; color: var(--accent); letter-spacing: .06em; }
+#mqttStatus { font-family: var(--mono); font-size: .7rem; padding: 4px 12px; border-radius: 20px;
+              border: 1px solid; transition: all .4s; }
+.mqtt-connected    { color: var(--ok);   border-color: var(--ok)!important;   background: #001a0d; }
+.mqtt-connecting   { color: var(--warn); border-color: var(--warn)!important; background: #1a1200; }
+.mqtt-disconnected { color: var(--crit); border-color: var(--crit)!important; background: #1a0008; }
+
+/* ── top stats row ── */
+.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+
+/* ── cards ── */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 16px;
+  padding: 22px 22px 20px;
+  position: relative;
+  overflow: hidden;
+  transition: transform .2s, border-color .3s;
+}
+.card:hover { transform: translateY(-2px); border-color: #1e3a5f; }
+.card::after {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: .5;
+}
+
+.card-label {
+  font-family: var(--mono); font-size: .65rem; letter-spacing: .22em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 10px;
+}
+.card-value {
+  font-size: 2.6rem; font-weight: 900; line-height: 1; color: #fff;
+}
+.card-value .unit { font-size: 1rem; font-weight: 400; color: var(--muted); margin-left: 4px; }
+.card-sub { font-family: var(--mono); font-size: .72rem; color: var(--muted); margin-top: 6px; }
+
+/* ── main grid ── */
+.main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.span2 { grid-column: span 2; }
+
+/* ── gauge card ── */
+.gauge-card { background: var(--panel); border: 1px solid var(--edge); border-radius: 16px; padding: 28px; position: relative; overflow: hidden; }
+.gauge-card::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent); opacity: .5; }
+
+.gauge-title { font-family: var(--mono); font-size: .65rem; letter-spacing: .22em; text-transform: uppercase; color: var(--muted); margin-bottom: 20px; }
+
+.gauge-wrap { position: relative; width: 200px; height: 200px; margin: 0 auto 20px; }
+.gauge-svg { transform: rotate(-90deg); }
+.gauge-track { fill: none; stroke: var(--edge); stroke-width: 14; stroke-linecap: round; }
+.gauge-fill  { fill: none; stroke-width: 14; stroke-linecap: round;
+               stroke-dasharray: 565; stroke-dashoffset: 565;
+               transition: stroke-dashoffset .8s cubic-bezier(.4,0,.2,1), stroke .4s; }
+.gauge-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); text-align: center; }
+.gauge-pct  { font-size: 2.8rem; font-weight: 900; color: #fff; line-height: 1; }
+.gauge-pct-label { font-family: var(--mono); font-size: .65rem; color: var(--muted); letter-spacing: .2em; }
+
+/* ── status badge ── */
+#statusBadge {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 12px 24px; border-radius: 10px; font-size: 1.3rem; font-weight: 800;
+  letter-spacing: .12em; border: 1px solid; transition: all .5s; margin-top: 4px;
+}
+.badge-dot { width: 12px; height: 12px; border-radius: 50%; animation: blink 1.4s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+/* ── progress bar ── */
+.prog-wrap { background: #080f1c; border: 1px solid var(--edge); border-radius: 8px; height: 20px; overflow: hidden; margin: 14px 0 6px; }
+.prog-bar { height: 100%; border-radius: 8px; transition: width .7s cubic-bezier(.4,0,.2,1), background .4s; }
+
+/* ── sparkline ── */
+.sparkline-card { background: var(--panel); border: 1px solid var(--edge); border-radius: 16px; padding: 22px; position: relative; overflow: hidden; }
+.sparkline-card::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent); opacity: .5; }
+.sparkline-title { font-family: var(--mono); font-size: .65rem; letter-spacing: .22em; text-transform: uppercase; color: var(--muted); margin-bottom: 16px; }
+#sparkSvg { width: 100%; height: 90px; overflow: visible; }
+
+/* ── history table ── */
+.hist-card { background: var(--panel); border: 1px solid var(--edge); border-radius: 16px; padding: 22px; }
+.hist-card::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent); opacity: .5; }
+.hist-title { font-family: var(--mono); font-size: .65rem; letter-spacing: .22em; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+.hist-table { width: 100%; border-collapse: collapse; }
+.hist-table th { font-family: var(--mono); font-size: .65rem; text-transform: uppercase; color: var(--muted);
+                 letter-spacing: .18em; padding: 0 0 10px; text-align: left; border-bottom: 1px solid var(--edge); }
+.hist-table td { font-family: var(--mono); font-size: .8rem; padding: 9px 0; border-bottom: 1px solid #0a1520; vertical-align: middle; }
+.hist-table tr:last-child td { border-bottom: none; }
+.occ-td { color: var(--accent); font-weight: 700; }
+.bar-td .mini-bar { height: 6px; border-radius: 3px; background: var(--accent); }
+
+/* ── mqtt log ── */
+.log-card { background: var(--panel2); border: 1px solid var(--edge); border-radius: 16px; padding: 22px; }
+.log-title { font-family: var(--mono); font-size: .65rem; letter-spacing: .22em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+#logList { list-style: none; max-height: 160px; overflow-y: auto; }
+#logList li { font-family: var(--mono); font-size: .72rem; padding: 5px 0; border-bottom: 1px solid #0a1520; display: flex; gap: 12px; }
+#logList li:last-child { border: none; }
+.log-ts { color: var(--muted); flex-shrink: 0; }
+.log-msg { color: #8ab4d8; word-break: break-all; }
+
+/* ── ESP API section ── */
+.api-card { background: var(--panel); border: 1px solid var(--edge); border-radius: 16px; padding: 22px; }
+.api-title { font-family: var(--mono); font-size: .65rem; letter-spacing: .22em; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+.api-endpoints { display: flex; gap: 10px; flex-wrap: wrap; }
+.ep-btn {
+  font-family: var(--mono); font-size: .72rem; letter-spacing: .1em;
+  padding: 8px 16px; border-radius: 8px; cursor: pointer; border: 1px solid var(--muted);
+  background: transparent; color: var(--txt); transition: all .2s;
+}
+.ep-btn:hover { border-color: var(--accent); color: var(--accent); background: #051525; }
+.ep-result { font-family: var(--mono); font-size: .75rem; color: var(--ok); background: #020810; border: 1px solid var(--edge);
+             border-radius: 8px; padding: 12px; margin-top: 12px; white-space: pre-wrap; word-break: break-all;
+             max-height: 160px; overflow-y: auto; display: none; }
+
+/* ── footer ── */
+footer { text-align: center; margin-top: 48px; font-family: var(--mono); font-size: .65rem; color: var(--muted); letter-spacing: .15em; }
+
+/* ── scrollbar ── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--edge); border-radius: 3px; }
+
+/* ── responsive ── */
+@media (max-width: 700px) {
+  .stats-row { grid-template-columns: 1fr 1fr; }
+  .main-grid  { grid-template-columns: 1fr; }
+  .span2      { grid-column: span 1; }
+}
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- HEADER -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon">🛡️</div>
+      <div class="brand-text">
+        <h1>Smart Disaster</h1>
+        <p>MONITORAMENTO DE ABRIGO · ESP32 · MQTT · IoT</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <div id="clock">--:--:--</div>
+      <div id="mqttStatus" class="mqtt-connecting">⏳ Conectando MQTT…</div>
+    </div>
+  </header>
+
+  <!-- TOP STATS -->
+  <div class="stats-row">
+    <div class="card">
+      <div class="card-label">Ocupação</div>
+      <div class="card-value"><span id="statOcc">0</span><span class="unit">pess.</span></div>
+      <div class="card-sub">de <span id="statCap">80</span> vagas</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Vagas Livres</div>
+      <div class="card-value" id="statFree" style="color:var(--ok)">80</div>
+      <div class="card-sub">disponíveis agora</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Sensor HC-SR04</div>
+      <div class="card-value"><span id="statDist">---</span><span class="unit">cm</span></div>
+      <div class="card-sub">última leitura</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Msgs MQTT</div>
+      <div class="card-value" id="statMsgs">0</div>
+      <div class="card-sub">recebidas</div>
+    </div>
+  </div>
+
+  <!-- MAIN GRID -->
+  <div class="main-grid">
+
+    <!-- Gauge -->
+    <div class="gauge-card">
+      <div class="gauge-title">▌ TAXA DE OCUPAÇÃO</div>
+      <div class="gauge-wrap">
+        <svg class="gauge-svg" viewBox="0 0 200 200" width="200" height="200">
+          <circle class="gauge-track" cx="100" cy="100" r="90"/>
+          <circle class="gauge-fill" id="gaugeFill" cx="100" cy="100" r="90"/>
+        </svg>
+        <div class="gauge-center">
+          <div class="gauge-pct" id="gaugePct">0%</div>
+          <div class="gauge-pct-label">CHEIO</div>
+        </div>
+      </div>
+      <div id="statusBadge" class="badge-disponivel">
+        <span class="badge-dot" id="badgeDot" style="background:var(--ok)"></span>
+        <span id="badgeText">DISPONÍVEL</span>
+      </div>
+    </div>
+
+    <!-- Progress + detail -->
+    <div class="gauge-card">
+      <div class="gauge-title">▌ DETALHES DO ABRIGO #<span id="abrigoId">1</span></div>
+
+      <div style="margin-bottom:20px">
+        <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:.72rem;color:var(--muted);margin-bottom:6px">
+          <span>Ocupação</span><span id="progLabel">0 / 80</span>
+        </div>
+        <div class="prog-wrap"><div class="prog-bar" id="progBar" style="width:0%;background:var(--ok)"></div></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div style="background:var(--panel2);border:1px solid var(--edge);border-radius:10px;padding:14px">
+          <div class="card-label">Capacidade</div>
+          <div style="font-size:1.8rem;font-weight:800;color:#fff" id="detCap">80</div>
+        </div>
+        <div style="background:var(--panel2);border:1px solid var(--edge);border-radius:10px;padding:14px">
+          <div class="card-label">Abrigo ID</div>
+          <div style="font-size:1.8rem;font-weight:800;color:var(--accent)" id="detId">1</div>
+        </div>
+        <div style="background:var(--panel2);border:1px solid var(--edge);border-radius:10px;padding:14px">
+          <div class="card-label">Distância</div>
+          <div style="font-size:1.8rem;font-weight:800;color:#fff"><span id="detDist">---</span> cm</div>
+        </div>
+        <div style="background:var(--panel2);border:1px solid var(--edge);border-radius:10px;padding:14px">
+          <div class="card-label">Último Update</div>
+          <div style="font-family:var(--mono);font-size:.75rem;color:var(--accent);margin-top:4px" id="detTs">--:--:--</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sparkline -->
+    <div class="sparkline-card span2">
+      <div class="sparkline-title">▌ HISTÓRICO DE OCUPAÇÃO (últimas 20 leituras)</div>
+      <svg id="sparkSvg" viewBox="0 0 900 90" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#38bdf8" stop-opacity=".4"/>
+            <stop offset="100%" stop-color="#38bdf8" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <path id="sparkArea" fill="url(#sparkGrad)"/>
+        <path id="sparkLine" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linejoin="round"/>
+      </svg>
+    </div>
+
+    <!-- Hist table -->
+    <div class="hist-card" style="position:relative">
+      <div class="hist-title">▌ REGISTROS DE ENTRADA/SAÍDA</div>
+      <table class="hist-table">
+        <thead><tr><th>#</th><th>Timestamp</th><th>Ocupação</th><th>Barra</th></tr></thead>
+        <tbody id="histBody"><tr><td colspan="4" style="color:var(--muted);font-family:var(--mono);font-size:.75rem;padding-top:10px">Aguardando dados MQTT…</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- MQTT log -->
+    <div class="log-card">
+      <div class="log-title">▌ LOG MQTT — smartdisaster/abrigo/001/ocupacao</div>
+      <ul id="logList">
+        <li><span class="log-ts">--:--:--</span><span class="log-msg">Conectando ao broker HiveMQ…</span></li>
+      </ul>
+    </div>
+
+    <!-- API tester -->
+    <div class="api-card span2">
+      <div class="api-title">▌ TESTAR ENDPOINTS ESP32 — http://localhost:8280</div>
+      <div class="api-endpoints">
+        <button class="ep-btn" onclick="callEP('/status','GET')">GET /status</button>
+        <button class="ep-btn" onclick="callEP('/leitura','POST')">POST /leitura</button>
+        <button class="ep-btn" onclick="callEP('/historico','GET')">GET /historico</button>
+        <button class="ep-btn" onclick="callEP('/dashboard','GET')">GET /dashboard</button>
+      </div>
+      <pre class="ep-result" id="epResult"></pre>
+    </div>
+
+  </div><!-- /main-grid -->
+
+  <footer>FIAP · Disruptive Architectures · IoT, IoB & Gen AI · 2026 &bull; HiveMQ MQTT &bull; ESP32 Wokwi</footer>
+</div>
+
+<script>
+// ── config ──────────────────────────────────────────────────────────────────
+const ESP_BASE   = 'http://localhost:8280';
+const MQTT_URL   = 'wss://broker.hivemq.com:8884/mqtt';
+const MQTT_TOPIC = 'smartdisaster/abrigo/001/ocupacao';
+const CAP        = 80;
+
+// ── state ───────────────────────────────────────────────────────────────────
+let msgCount = 0;
+let sparkData = [];
+let histData  = [];
+
+// ── clock ───────────────────────────────────────────────────────────────────
+function tick() {
+  document.getElementById('clock').textContent =
+    new Date().toLocaleTimeString('pt-BR');
+}
+tick(); setInterval(tick, 1000);
+
+// ── gauge ───────────────────────────────────────────────────────────────────
+function setGauge(occ, cap, dist) {
+  const pct = Math.min(100, Math.round(occ / cap * 100));
+  const circumference = 2 * Math.PI * 90; // 565
+  const offset = circumference * (1 - pct / 100);
+  const fill = document.getElementById('gaugeFill');
+  fill.style.strokeDashoffset = offset;
+  fill.style.stroke = pct >= 100 ? 'var(--crit)' : pct >= 80 ? 'var(--warn)' : 'var(--ok)';
+  document.getElementById('gaugePct').textContent = pct + '%';
+
+  // top stats
+  document.getElementById('statOcc').textContent  = occ;
+  document.getElementById('statCap').textContent  = cap;
+  document.getElementById('statFree').textContent = Math.max(0, cap - occ);
+  document.getElementById('statFree').style.color = (cap - occ) === 0 ? 'var(--crit)' : 'var(--ok)';
+  if (dist !== undefined) {
+    document.getElementById('statDist').textContent = dist.toFixed(1);
+    document.getElementById('detDist').textContent  = dist.toFixed(1);
+  }
+  document.getElementById('statMsgs').textContent = msgCount;
+
+  // progress bar
+  document.getElementById('progLabel').textContent = occ + ' / ' + cap;
+  document.getElementById('progBar').style.width = pct + '%';
+  document.getElementById('progBar').style.background = pct >= 100 ? 'var(--crit)' : pct >= 80 ? 'var(--warn)' : 'var(--ok)';
+
+  // detail
+  document.getElementById('detCap').textContent = cap;
+  document.getElementById('detId').textContent  = document.getElementById('abrigoId').textContent;
+  document.getElementById('detTs').textContent  = new Date().toLocaleTimeString('pt-BR');
+
+  // status badge
+  const lotado = occ >= cap;
+  const badge = document.getElementById('statusBadge');
+  badge.style.background   = lotado ? '#1a0008' : '#001a0d';
+  badge.style.color        = lotado ? 'var(--crit)' : 'var(--ok)';
+  badge.style.border       = '1px solid ' + (lotado ? 'var(--crit)' : 'var(--ok)');
+  document.getElementById('badgeDot').style.background = lotado ? 'var(--crit)' : 'var(--ok)';
+  document.getElementById('badgeText').textContent = lotado ? 'LOTADO — ACESSO BLOQUEADO' : 'DISPONÍVEL — VAGAS ABERTAS';
+}
+
+// ── sparkline ───────────────────────────────────────────────────────────────
+function updateSpark() {
+  const svg = document.getElementById('sparkSvg');
+  const W = 900, H = 90, pad = 8;
+  const data = sparkData.slice(-20);
+  if (data.length < 2) return;
+  const max = Math.max(CAP, ...data);
+  const xs = data.map((_, i) => (i / (data.length - 1)) * W);
+  const ys = data.map(v => H - pad - ((v / max) * (H - pad * 2)));
+  const pts = xs.map((x, i) => x + ',' + ys[i]).join(' ');
+  document.getElementById('sparkLine').setAttribute('points', pts);
+  const area = 'M' + xs[0] + ',' + H + ' ' + xs.map((x,i)=>x+','+ys[i]).join(' ') + ' ' + xs[xs.length-1] + ',' + H + 'Z';
+  document.getElementById('sparkArea').setAttribute('d', area);
+}
+
+// ── history table ────────────────────────────────────────────────────────────
+function updateHist() {
+  const tbody = document.getElementById('histBody');
+  if (histData.length === 0) return;
+  tbody.innerHTML = [...histData].reverse().slice(0,10).map((e, i) => {
+    const pct = Math.min(100, Math.round(e.ocupacao / CAP * 100));
+    const col = pct >= 100 ? 'var(--crit)' : pct >= 80 ? 'var(--warn)' : 'var(--ok)';
+    return `<tr>
+      <td style="color:var(--muted)">${histData.length - i}</td>
+      <td class="ts-td" style="color:var(--muted)">${e.ts}</td>
+      <td class="occ-td">${e.ocupacao}</td>
+      <td class="bar-td" style="width:140px"><div class="mini-bar" style="width:${pct}%;background:${col}"></div></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── MQTT log ─────────────────────────────────────────────────────────────────
+function addLog(msg) {
+  const ts = new Date().toLocaleTimeString('pt-BR');
+  const li = document.createElement('li');
+  li.innerHTML = `<span class="log-ts">${ts}</span><span class="log-msg">${escHtml(msg)}</span>`;
+  const list = document.getElementById('logList');
+  list.prepend(li);
+  while (list.children.length > 30) list.removeChild(list.lastChild);
+}
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+
+// ── MQTT ─────────────────────────────────────────────────────────────────────
+function setMqttStatus(state) {
+  const el = document.getElementById('mqttStatus');
+  el.className = 'mqtt-' + state;
+  el.textContent = state === 'connected' ? '● MQTT Conectado'
+                 : state === 'connecting' ? '⏳ Conectando MQTT…'
+                 : '✕ MQTT Desconectado';
+}
+
+const clientId = 'dashboard-' + Math.random().toString(16).slice(2,8);
+const client = mqtt.connect(MQTT_URL, { clientId, keepalive: 30, reconnectPeriod: 3000 });
+
+client.on('connect', () => {
+  setMqttStatus('connected');
+  client.subscribe(MQTT_TOPIC);
+  addLog('Inscrito em: ' + MQTT_TOPIC);
+});
+client.on('reconnect', () => setMqttStatus('connecting'));
+client.on('offline',   () => setMqttStatus('disconnected'));
+client.on('error', e  => { setMqttStatus('disconnected'); addLog('Erro: ' + e.message); });
+
+client.on('message', (topic, payload) => {
+  msgCount++;
+  const raw = payload.toString();
+  addLog(raw);
+  try {
+    const d = JSON.parse(raw);
+    const occ = d.ocupacao ?? 0;
+    const cap = d.capacidade ?? CAP;
+    const dist = d.distancia_cm ?? undefined;
+    if (d.abrigo_id) {
+      document.getElementById('abrigoId').textContent = d.abrigo_id;
+      document.getElementById('detId').textContent    = d.abrigo_id;
+    }
+    setGauge(occ, cap, dist);
+    sparkData.push(occ);
+    if (sparkData.length > 60) sparkData.shift();
+    updateSpark();
+    // add to hist
+    histData.push({ ocupacao: occ, ts: d.ts || new Date().toLocaleTimeString('pt-BR') });
+    if (histData.length > 20) histData.shift();
+    updateHist();
+  } catch(e) { addLog('JSON inválido: ' + e.message); }
+});
+
+// ── REST polling (fallback / supplement) ─────────────────────────────────────
+async function pollApi() {
+  try {
+    const [s, h] = await Promise.all([
+      fetch(ESP_BASE + '/status').then(r => r.json()),
+      fetch(ESP_BASE + '/historico').then(r => r.json())
+    ]);
+    setGauge(s.ocupacao, s.capacidade, s.distancia_cm);
+    if (h.length) {
+      histData = h;
+      h.forEach(e => sparkData.push(e.ocupacao));
+      if (sparkData.length > 60) sparkData = sparkData.slice(-60);
+      updateSpark();
+      updateHist();
+    }
+  } catch(_) {}  // silently ignore — Wokwi may not be running
+}
+pollApi(); setInterval(pollApi, 5000);
+
+// ── endpoint tester ───────────────────────────────────────────────────────────
+async function callEP(path, method) {
+  const el = document.getElementById('epResult');
+  el.style.display = 'block';
+  el.textContent = '⏳ ' + method + ' ' + ESP_BASE + path + '…';
+  try {
+    const r = await fetch(ESP_BASE + path, { method });
+    const txt = await r.text();
+    try { el.textContent = JSON.stringify(JSON.parse(txt), null, 2); }
+    catch(_) { el.textContent = txt; }
+    el.style.color = 'var(--ok)';
+  } catch(e) {
+    el.textContent = '⚠ Erro: ' + e.message + '\n\nO ESP32 precisa estar rodando no Wokwi com o port-forward localhost:8280.';
+    el.style.color = 'var(--warn)';
+  }
+}
+
+// ── initial gauge ─────────────────────────────────────────────────────────────
+setGauge(0, CAP, undefined);
+</script>
+</body>
+</html>
