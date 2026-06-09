@@ -1,6 +1,7 @@
 # 🛡️ Smart Disaster — Abrigo IoT
 
 LINK DO VIDEO https://youtu.be/CWlAwDi8Oac
+VIDEO PITCH SOBRE O PROJETO : https://www.youtube.com/watch?v=ItPEbWxzNkw
 
 Sistema de monitoramento de ocupação de abrigos em situações de desastre.  
 ESP32 + sensor ultrassônico + MQTT + Web Server + Dashboard HTML moderno.
